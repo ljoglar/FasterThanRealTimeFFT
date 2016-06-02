@@ -12,87 +12,84 @@ function fftOffline(url){
 
 	window.AudioContext = window.AudioContext||window.webkitAudioContext;
 	this.audioContext = new AudioContext();
-	this.url = url,
+	this.url = url,							// audio file url
 	this.audioBuffer = undefined,
-	this.frameBuffersArray = [],
-	this.fftArray = undefined,
-	this.fftSize = 2048,					//also frame-buffer size
+	this.frameBuffersArray = [],			// array containing the overlaped audio buffers
+	this.fftArray = undefined,				// array containing the fft for each frame buffer
+	this.fftSize = 2048,					// also frame-buffer size
 	this.sampleRate = 44100,
 	this.percentOverlap = 50,
 
+	/*
+	Function fftAnalysis()
+	Applies windowing and fft (from external libraries) to each frame buffer
+	*/
 	this.fftAnalysis = function(){
 		this.fftArray = [];
-		// create instance of dsp.js fft
-		var fft = new FFT(this.fftSize, this.sampleRate);
-		// create instance of dsp.js window function
-		// (window types Hamming = 6; Hann = 7;)
-		var windowType = 6;											
-		var wind = new WindowFunction(windowType);
+		var fft = new FFT(this.fftSize, this.sampleRate);	// create instance of dsp.js fft
+		var windowType = 6;									// (window types Hamming = 6; Hann = 7;)
+		var wind = new WindowFunction(windowType);			// create instance of dsp.js window function
 
 		// for each frame buffer apply window and fft
 		for (var i = 0; i < this.frameBuffersArray.length; i++){
-			var frameBuffer = this.frameBuffersArray[i].slice();
-			// apply window function from dsp.js
-			wind.process(frameBuffer);
-		    // apply fft from dsp.js
-		    fft.forward(frameBuffer);
-		    // store fft spectrum in array
-			this.fftArray.push(fft.spectrum.slice());
+			var frameBuffer = this.frameBuffersArray[i].slice();	// copy frame buffer into variable
+			wind.process(frameBuffer);								// apply window function from dsp.js
+		    fft.forward(frameBuffer);								// apply fft from dsp.js
+			this.fftArray.push(fft.spectrum.slice());				// store fft spectrum in array
 		}
 	};
 
+
+	/*
+	Function divideInFrameBuffers()
+	Divides the audioBuffer data (mono channel) in frame buffers applying overlap
+	*/
 	this.divideInFrameBuffers = function(){
-		var frameBuffer = [];
-		var newDataBuffer = [];
-		var newDataSize = Math.round((100 - this.percentOverlap) * this.fftSize / 100);
-		var overlapSize = this.fftSize - newDataSize;
-		var prevFrameBuffer = new Array(this.fftSize);
-		var frameBuffersArray = this.frameBuffersArray;
+		var frameBuffer = [];										// variable to fill with each frame samples
+		var newDataBuffer = [];										// section of new (non-overlaped) samples
+		var newDataSize = Math.round((100 - this.percentOverlap) * this.fftSize / 100);	// size in samples of the new data
+		var overlapSize = this.fftSize - newDataSize;				// size in samples of overlaped data
+		var prevFrameBuffer = new Array(this.fftSize);				// array containing previous frame buffer
 
 		for (i = 0; i < this.audioBuffer.getChannelData(0).length; i++){
-			// frameBuffer = [];
-			// first frame without overlap
-			if(i < this.fftSize){		
+			if(i < this.fftSize){													// first frame without overlap
 				frameBuffer.push(this.audioBuffer.getChannelData(0)[i]);
 			}
-			// not first frame and not a multiple of newDataSize -> populate newDataBuffer
-			else if(i >= this.fftSize && (i % newDataSize) != 0){
+			else if(i >= this.fftSize && (i % newDataSize) != 0){					// not first frame and not a multiple of newDataSize -> populate newDataBuffer
 				newDataBuffer.push(this.audioBuffer.getChannelData(0)[i]);
 			}
-			// every newDataSize samples
-			else{
-				// if its not the first frame buffer
-				// compose the new frame buffer with: % of previous frame + rest new samples
-				if(prevFrameBuffer[0] != null){
+			else{																	// every newDataSize samples
+																					// if its not the first frame buffer
+				if(prevFrameBuffer[0] != null){										// populate new frame buffer with: overlapSize previous frame + newDataSize new samples
 					frameBuffer = prevFrameBuffer.slice(prevFrameBuffer.length - overlapSize, prevFrameBuffer.length);
 					frameBuffer = frameBuffer.concat(newDataBuffer);
 				}
-				frameBuffersArray.push(frameBuffer);
+				this.frameBuffersArray.push(frameBuffer);
 
-				// reset newDataBuffer
-				newDataBuffer = [];
-				// start populating the next newDataBuffer
-				newDataBuffer.push(this.audioBuffer.getChannelData(0)[i]);
-				//update previous frame buffer with actual frame buffer
-				prevFrameBuffer = frameBuffer;
+				newDataBuffer = [];														// reset newDataBuffer
+				newDataBuffer.push(this.audioBuffer.getChannelData(0)[i]);				// start populating the next newDataBuffer
+				prevFrameBuffer = frameBuffer;											// update previous frame buffer with actual frame buffer
 			}
-			// last element
-			if(i === this.audioBuffer.getChannelData(0).length -1){
-				// if in last buffer newDataBuffer smaller than newDataSize
-				// if(newDataBuffer.length < newDataSize){
-				if( i % newDataSize !== 0){
-					// zero pad last frame buffer
-					var zerosArray = this.zeros(newDataSize - newDataBuffer.length);
+
+			if(i === this.audioBuffer.getChannelData(0).length -1){						// last element
+				if( i % newDataSize !== 0){												// if in last buffer newDataBuffer smaller than newDataSize
+					var zerosArray = this.zeros(newDataSize - newDataBuffer.length);	// zero pad last frame buffer
 					frameBuffer = prevFrameBuffer.slice(prevFrameBuffer.length - overlapSize, prevFrameBuffer.length);
 					frameBuffer = frameBuffer.concat(newDataBuffer);
 					frameBuffer = frameBuffer.concat(zerosArray);
-					frameBuffersArray.push(frameBuffer);
+					this.frameBuffersArray.push(frameBuffer);
 				}
 				this.fftAnalysis();
 			}
 		}
 	};
 
+	/*
+	Function zeroPad(end, numZeros)
+	adds zeros at the begging or the end of the audioBuffer
+	* end (boolean). determines if the padding is at the beggining or at the end
+	* numZeros (int). add especific number of zeros
+	*/
 	this.zeroPad = function(end, numZeros){
 		var end = (end !== undefined) ? end : true;
 		var length = this.audioBuffer.getChannelData(0).length;
@@ -113,10 +110,20 @@ function fftOffline(url){
 		}
 	};
 
+	/*
+	Function zeros(length)
+	returns an array with a determined length filled with zeros
+	*length (int). length of the returned array
+	*/
 	this.zeros = function(length){
 		return [].slice.apply(new Uint8Array(new Array(length)));
 	};
 
+
+	/*
+	Function loadBuffer()
+	loads an audio file and decodes the data into an audioBuffer
+	*/
 	this.loadBuffer = function(){
 		// Load buffer asynchronously
 		var that = this;
