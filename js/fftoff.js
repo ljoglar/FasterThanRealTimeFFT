@@ -34,7 +34,7 @@ function fftOffline(url){
 		for (var i = 0; i < this.frameBuffersArray.length; i++){
 			var frameBuffer = this.frameBuffersArray[i].slice();	// copy frame buffer into variable
 			wind.process(frameBuffer);								// apply window function from dsp.js
-		    fft.forward(frameBuffer);								// apply fft from dsp.js
+			fft.forward(frameBuffer);								// apply fft from dsp.js
 			this.fftArray.push(fft.spectrum.slice());				// store fft spectrum in array
 		}
 	};
